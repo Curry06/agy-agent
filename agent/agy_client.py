@@ -256,6 +256,7 @@ class AGYClient:
         effort: str | None,
         agent: str | None,
         timeout_seconds: float,
+        on_text_delta: Any | None = None,
     ) -> tuple[str, dict[str, Any], str | None]:
         with self._io_lock:
             self._spawn()
@@ -306,6 +307,8 @@ class AGYClient:
                         delta = step.get("text_delta")
                         if isinstance(delta, str):
                             response += delta
+                            if on_text_delta is not None:
+                                on_text_delta(delta)
                         if step.get("step_type") == "tool":
                             self._last_tool_event = dict(step)
                     continue
@@ -323,7 +326,11 @@ class AGYClient:
                     status = str(result.get("status") or "").upper()
                     usage = result.get("usage") if isinstance(result.get("usage"), dict) else {}
                     final_response = result.get("response")
-                    if isinstance(final_response, str):
+                    if isinstance(final_response, str) and final_response != response:
+                        if final_response.startswith(response):
+                            suffix = final_response[len(response):]
+                            if suffix and on_text_delta is not None:
+                                on_text_delta(suffix)
                         response = final_response
 
                     if status != "SUCCESS":
