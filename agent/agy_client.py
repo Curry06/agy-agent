@@ -66,6 +66,7 @@ class AGYClient:
         self._stderr_reader: threading.Thread | None = None
         self._conversation_id: str | None = None
         self._turns = 0
+        self._last_tool_event: dict[str, Any] | None = None
 
     def _spawn(self) -> None:
         with self._proc_lock:
@@ -103,6 +104,7 @@ class AGYClient:
             self.is_closed = False
             self._conversation_id = None
             self._turns = 0
+            self._last_tool_event = None
 
             self._reader = threading.Thread(
                 target=self._stdout_loop, args=(proc,), daemon=True, name="hermes-agy-stdout"
@@ -186,7 +188,12 @@ class AGYClient:
         stream: bool = False,
         **kwargs: Any,
     ) -> Any:
-        prompt = self._format_messages(messages or [])
+        all_messages = messages or []
+        if self._turns:
+            latest = next((m for m in reversed(all_messages) if str(m.get("role") or "").strip().lower() == "user"), None)
+            prompt = self._format_messages([latest] if latest else [])
+        else:
+            prompt = self._format_messages(all_messages)
         if not prompt:
             prompt = "(No prompt was supplied.)"
 
@@ -271,6 +278,8 @@ class AGYClient:
                         delta = step.get("text_delta")
                         if isinstance(delta, str):
                             response += delta
+                        if step.get("step_type") == "tool":
+                            self._last_tool_event = step
                     continue
 
                 if kind == "result":
