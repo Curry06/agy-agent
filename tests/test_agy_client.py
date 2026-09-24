@@ -105,3 +105,26 @@ def test_builds_agy_model_effort_and_agent_args():
         "--effort", "high",
         "--agent", "developer",
     ]
+
+
+def test_incremental_streaming_forwards_deltas():
+    client = AGYClient(command="agy-test")
+    client._proc = type("Proc", (), {"poll": lambda self: None})()
+    client._spawn = lambda: None
+    client._send = lambda payload: None
+    client._events.put({"event": "step_update", "step_update": {
+        "text_delta": "Hel", "step_type": "agent_response"
+    }})
+    client._events.put({"event": "step_update", "step_update": {
+        "text_delta": "lo", "step_type": "agent_response"
+    }})
+    client._events.put({"event": "result", "result": {
+        "status": "SUCCESS", "response": "Hello",
+        "usage": {"input_tokens": 1, "output_tokens": 2, "total_tokens": 3},
+    }})
+
+    chunks = list(client._stream_chat_completion(
+        "hello", model=None, effort=None, agent=None, timeout_seconds=1
+    ))
+    assert [c.choices[0].delta.content for c in chunks[:-1]] == ["Hel", "lo"]
+    assert chunks[-1].choices[0].finish_reason == "stop"
