@@ -200,6 +200,15 @@ class AGYClient:
         if not prompt:
             prompt = "(No prompt was supplied.)"
 
+        if stream:
+            return self._stream_chat_completion(
+                prompt,
+                model=model,
+                effort=kwargs.get("effort"),
+                agent=kwargs.get("agent"),
+                timeout_seconds=float(timeout or DEFAULT_TIMEOUT_SECONDS),
+            )
+
         response, usage, conversation_id = self._run_turn(
             prompt,
             model=model,
@@ -228,7 +237,7 @@ class AGYClient:
             model=model or "agy",
             id=conversation_id or "",
         )
-        return self._completion_to_stream(completion) if stream else completion
+        return completion
 
     def _run_turn(
         self,
