@@ -209,6 +209,15 @@ class AGYClient:
                 timeout_seconds=float(timeout or DEFAULT_TIMEOUT_SECONDS),
             )
 
+        if stream:
+            return self._stream_chat_completion(
+                prompt,
+                model=model,
+                effort=kwargs.get("effort"),
+                agent=kwargs.get("agent"),
+                timeout_seconds=float(timeout or DEFAULT_TIMEOUT_SECONDS),
+            )
+
         response, usage, conversation_id = self._run_turn(
             prompt,
             model=model,
@@ -426,6 +435,68 @@ class AGYClient:
                 if value:
                     result.append(str(value))
         return list(dict.fromkeys(result))
+
+    def _stream_chat_completion(
+        self,
+        prompt: str,
+        *,
+        model: str | None,
+        effort: str | None,
+        agent: str | None,
+        timeout_seconds: float,
+    ) -> Iterator[Any]:
+        events: queue.Queue[Any] = queue.Queue()
+        state: dict[str, Any] = {}
+
+        def on_delta(delta: str) -> None:
+            events.put(("delta", delta))
+
+        def worker() -> None:
+            try:
+                _, usage, conversation_id = self._run_turn(
+                    prompt,
+                    model=model,
+                    effort=effort,
+                    agent=agent,
+                    timeout_seconds=timeout_seconds,
+                    on_text_delta=on_delta,
+                )
+                state.update(usage=usage, conversation_id=conversation_id)
+            except BaseException as exc:
+                state["error"] = exc
+            finally:
+                events.put(("done", None))
+
+        threading.Thread(target=worker, daemon=True, name="hermes-agy-stream").start()
+
+        while True:
+            kind, value = events.get()
+            if kind == "done":
+                break
+            yield SimpleNamespace(
+                choices=[SimpleNamespace(
+                    delta=SimpleNamespace(content=value, role="assistant"),
+                    finish_reason=None,
+                )],
+                model=model or "agy",
+            )
+
+        if "error" in state:
+            raise state["error"]
+
+        usage = state.get("usage") or {}
+        yield SimpleNamespace(
+            choices=[SimpleNamespace(
+                delta=SimpleNamespace(content=None),
+                finish_reason="stop",
+            )],
+            model=model or "agy",
+            usage=SimpleNamespace(
+                prompt_tokens=int(usage.get("input_tokens", 0) or 0),
+                completion_tokens=int(usage.get("output_tokens", 0) or 0),
+                total_tokens=int(usage.get("total_tokens", 0) or 0),
+            ),
+        )
 
     def _completion_to_stream(self, completion: Any) -> Iterator[Any]:
         content = completion.choices[0].message.content or ""
