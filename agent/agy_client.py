@@ -69,6 +69,7 @@ class AGYClient:
         self._turns = 0
         self._last_tool_event: dict[str, Any] | None = None
         self._init_info: dict[str, Any] = {}
+        self._process_generation = 0
 
     def _spawn(self) -> None:
         with self._proc_lock:
@@ -103,6 +104,7 @@ class AGYClient:
                 raise RuntimeError("AGY process did not expose stdin/stdout pipes.")
 
             self._proc = proc
+            self._process_generation += 1
             self.is_closed = False
             self._conversation_id = None
             self._turns = 0
@@ -264,6 +266,7 @@ class AGYClient:
             if self._turns == 0 and (model or effort or agent):
                 self._restart_with_options(model=model, effort=effort, agent=agent)
 
+            self._drain_events()
             self._send({"event": "user", "message": {"content": prompt}})
 
             deadline = time.monotonic() + timeout_seconds
@@ -386,6 +389,28 @@ class AGYClient:
             if proc.poll() is None:
                 with contextlib.suppress(Exception):
                     proc.kill()
+
+    def _drain_events(self) -> None:
+        while True:
+            try:
+                self._events.get_nowait()
+            except queue.Empty:
+                return
+
+    def _recover_process(self) -> bool:
+        conversation_id = self._conversation_id
+        if not conversation_id:
+            return False
+        self._restart_process()
+        self._args = list(self._base_args)
+        self._args.extend(["--conversation", conversation_id])
+        try:
+            self._spawn()
+        except RuntimeError:
+            self._args = list(self._base_args)
+            return False
+        self._drain_events()
+        return True
 
     def _process_error(self) -> str:
         lines: list[str] = []
