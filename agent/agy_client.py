@@ -67,6 +67,7 @@ class AGYClient:
         self._conversation_id: str | None = None
         self._turns = 0
         self._last_tool_event: dict[str, Any] | None = None
+        self._init_info: dict[str, Any] = {}
 
     def _spawn(self) -> None:
         with self._proc_lock:
@@ -105,6 +106,7 @@ class AGYClient:
             self._conversation_id = None
             self._turns = 0
             self._last_tool_event = None
+            self._init_info = {}
 
             self._reader = threading.Thread(
                 target=self._stdout_loop, args=(proc,), daemon=True, name="hermes-agy-stdout"
@@ -266,6 +268,9 @@ class AGYClient:
                 if kind == "init":
                     self._conversation_id = str(event.get("conversation_id") or "") or None
                     current_conversation = self._conversation_id
+                    init = event.get("init")
+                    if isinstance(init, dict):
+                        self._init_info = dict(init)
                     continue
 
                 if kind == "step_update":
@@ -279,7 +284,7 @@ class AGYClient:
                         if isinstance(delta, str):
                             response += delta
                         if step.get("step_type") == "tool":
-                            self._last_tool_event = step
+                            self._last_tool_event = dict(step)
                     continue
 
                 if kind == "result":
@@ -411,6 +416,18 @@ class AGYClient:
             model=completion.model,
             usage=completion.usage,
         )
+
+    @property
+    def conversation_id(self) -> str | None:
+        return self._conversation_id
+
+    @property
+    def init_info(self) -> dict[str, Any]:
+        return dict(self._init_info)
+
+    @property
+    def last_tool_event(self) -> dict[str, Any] | None:
+        return dict(self._last_tool_event) if self._last_tool_event else None
 
     def close(self) -> None:
         self._restart_process()
