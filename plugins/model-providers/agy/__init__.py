@@ -62,6 +62,18 @@ class AGYProfile(ProviderProfile):
             "login_command": "agy",
         }
 
+    def discover_models(self, **kwargs: Any) -> list[dict[str, Any]] | None:
+        models = self.fetch_models(timeout=float(kwargs.get("timeout") or 15.0))
+        if not models:
+            return None
+        return [
+            {"id": model, "label": model, "note": "Antigravity model"}
+            for model in models
+        ]
+
+    def supported_reasoning_efforts(self, model: str | None) -> tuple[str, ...] | None:
+        return ("low", "medium", "high")
+
     def fetch_models(
         self,
         *,
