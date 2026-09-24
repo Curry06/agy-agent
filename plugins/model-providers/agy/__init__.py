@@ -17,6 +17,51 @@ class AGYProfile(ProviderProfile):
         from agent.agy_client import AGYClient
         return AGYClient(**client_kwargs)
 
+    def setup_status(self, **kwargs: Any) -> dict[str, Any] | None:
+        """Probe the local AGY CLI without starting an interactive session."""
+        import subprocess
+
+        command = str(kwargs.get("command") or self.process_command or "agy")
+        timeout = float(kwargs.get("timeout") or 10.0)
+        try:
+            probe = subprocess.run(
+                [command, "models", "--output-format", "json"],
+                capture_output=True,
+                text=True,
+                timeout=timeout,
+                check=False,
+            )
+        except FileNotFoundError:
+            return {
+                "available": False,
+                "logged_in": False,
+                "detail": "AGY CLI was not found on PATH.",
+                "login_command": "agy",
+            }
+        except subprocess.TimeoutExpired:
+            return {
+                "available": True,
+                "logged_in": False,
+                "detail": "AGY model discovery timed out.",
+                "login_command": "agy",
+            }
+
+        if probe.returncode != 0:
+            detail = (probe.stderr or probe.stdout or "").strip()
+            return {
+                "available": True,
+                "logged_in": False,
+                "detail": detail or "AGY model discovery failed.",
+                "login_command": "agy",
+            }
+
+        return {
+            "available": True,
+            "logged_in": True,
+            "detail": "AGY model discovery succeeded.",
+            "login_command": "agy",
+        }
+
     def fetch_models(
         self,
         *,
