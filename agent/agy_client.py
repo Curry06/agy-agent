@@ -415,3 +415,5 @@ class AGYClient:
     def close(self) -> None:
         self._restart_process()
         self.is_closed = True
+
+# AGY tool metadata bridge marker
