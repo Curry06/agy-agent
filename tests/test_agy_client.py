@@ -128,3 +128,16 @@ def test_incremental_streaming_forwards_deltas():
     ))
     assert [c.choices[0].delta.content for c in chunks[:-1]] == ["Hel", "lo"]
     assert chunks[-1].choices[0].finish_reason == "stop"
+
+
+def test_recover_process_uses_conversation_id():
+    client = AGYClient(command="agy-test", args=["--input-format", "stream-json"])
+    client._conversation_id = "conv-42"
+    client._restart_process = lambda: None
+    client._spawn = lambda: None
+    client._drain_events = lambda: None
+    assert client._recover_process() is True
+    assert client._args == [
+        "--input-format", "stream-json",
+        "--conversation", "conv-42",
+    ]
