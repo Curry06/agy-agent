@@ -94,3 +94,14 @@ def test_error_result_protocol():
         assert "authentication required" in str(exc)
     else:
         raise AssertionError("expected RuntimeError")
+
+def test_builds_agy_model_effort_and_agent_args():
+    client = AGYClient(command="agy-test", args=["--input-format", "stream-json"])
+    client._spawn = lambda: None
+    client._restart_with_options(model="gemini-pro", effort="high", agent="developer")
+    assert client._args == [
+        "--input-format", "stream-json",
+        "--model", "gemini-pro",
+        "--effort", "high",
+        "--agent", "developer",
+    ]
