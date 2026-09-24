@@ -46,10 +46,11 @@ class AGYClient:
         self.base_url = base_url or "agy://local"
         self._default_headers = dict(default_headers or {})
         self._command = agy_command or command or "agy"
-        self._args = list(agy_args or args or [
+        self._base_args = list(agy_args or args or [
             "--input-format", "stream-json",
             "--output-format", "stream-json",
         ])
+        self._args = list(self._base_args)
         self._cwd = str(Path(agy_cwd or os.getcwd()).resolve())
 
         self.chat = SimpleNamespace(
@@ -202,6 +203,8 @@ class AGYClient:
         response, usage, conversation_id = self._run_turn(
             prompt,
             model=model,
+            effort=kwargs.get("effort"),
+            agent=kwargs.get("agent"),
             timeout_seconds=float(timeout or DEFAULT_TIMEOUT_SECONDS),
         )
 
@@ -232,13 +235,15 @@ class AGYClient:
         prompt: str,
         *,
         model: str | None,
+        effort: str | None,
+        agent: str | None,
         timeout_seconds: float,
     ) -> tuple[str, dict[str, Any], str | None]:
         with self._io_lock:
             self._spawn()
 
-            if self._turns == 0 and model:
-                self._restart_with_model(model)
+            if self._turns == 0 and (model or effort or agent):
+                self._restart_with_options(model=model, effort=effort, agent=agent)
 
             self._send({"event": "user", "message": {"content": prompt}})
 
@@ -316,14 +321,28 @@ class AGYClient:
                 if kind == "protocol_error":
                     raise RuntimeError(str(event.get("error") or "AGY protocol error"))
 
-    def _restart_with_model(self, model: str) -> None:
+    def _restart_with_options(
+        self,
+        *,
+        model: str | None = None,
+        effort: str | None = None,
+        agent: str | None = None,
+    ) -> None:
         self._restart_process()
-        self._args = [
-            "--input-format", "stream-json",
-            "--output-format", "stream-json",
-            "--model", str(model),
-        ]
+        self._args = list(self._base_args)
+        if model:
+            self._args.extend(["--model", str(model)])
+        if effort:
+            effort_value = str(effort).lower()
+            if effort_value not in {"low", "medium", "high"}:
+                raise ValueError("AGY effort must be one of: low, medium, high")
+            self._args.extend(["--effort", effort_value])
+        if agent:
+            self._args.extend(["--agent", str(agent)])
         self._spawn()
+
+    def _restart_with_model(self, model: str) -> None:
+        self._restart_with_options(model=model)
 
     def _restart_process(self) -> None:
         with self._proc_lock:
